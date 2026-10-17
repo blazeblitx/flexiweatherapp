@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 enum TemperatureUnit { celsius, fahrenheit }
 
+enum ForecastMetric { temperature, precipitation, wind }
+
 extension TemperatureUnitLabel on TemperatureUnit {
   String get symbol => this == TemperatureUnit.celsius ? '°C' : '°F';
 }
@@ -49,13 +51,19 @@ class HourForecast {
     required this.time,
     required this.temperature,
     required this.weatherCode,
+    this.isDay = true,
     this.precipitationProbability = 0,
+    this.precipitationMm = 0,
+    this.windSpeed = 0,
   });
 
   final DateTime time;
   final double temperature;
   final int weatherCode;
+  final bool isDay;
   final int precipitationProbability;
+  final double precipitationMm;
+  final double windSpeed;
 }
 
 class DayForecast {
@@ -66,6 +74,7 @@ class DayForecast {
     required this.weatherCode,
     required this.uvIndex,
     required this.windSpeed,
+    this.precipitationMm = 0,
     this.sunrise,
     this.sunset,
   });
@@ -76,6 +85,7 @@ class DayForecast {
   final int weatherCode;
   final double uvIndex;
   final double windSpeed;
+  final double precipitationMm;
   final DateTime? sunrise;
   final DateTime? sunset;
 }
@@ -131,6 +141,17 @@ class WeatherSnapshot {
                 ?.map((value) => (value as num?)?.toInt() ?? 0)
                 .toList() ??
             List<int>.filled(times.length, 0);
+    final precipitationAmounts = (hourlyJson['precipitation'] as List<dynamic>?)
+            ?.map((value) => (value as num?)?.toDouble() ?? 0)
+            .toList() ??
+        List<double>.filled(times.length, 0);
+    final windSpeeds = (hourlyJson['wind_speed_10m'] as List<dynamic>?)
+            ?.map((value) => (value as num?)?.toDouble() ?? 0)
+            .toList() ??
+        List<double>.filled(times.length, 0);
+    final daylight = (hourlyJson['is_day'] as List<dynamic>?)
+        ?.map((value) => (value as num).toInt() == 1)
+        .toList();
     final now = DateTime.parse(current['time'] as String);
     var startIndex =
         times.indexWhere((time) => !DateTime.parse(time).isBefore(now));
@@ -141,7 +162,12 @@ class WeatherSnapshot {
         time: DateTime.parse(times[i]),
         temperature: temperatures[i],
         weatherCode: codes[i],
+        isDay: daylight?[i] ??
+            (DateTime.parse(times[i]).hour >= 6 &&
+                DateTime.parse(times[i]).hour < 18),
         precipitationProbability: precipitation[i],
+        precipitationMm: precipitationAmounts[i],
+        windSpeed: windSpeeds[i],
       ));
     }
 
@@ -164,6 +190,8 @@ class WeatherSnapshot {
         dailyValues<double>('uv_index_max', (v) => (v as num).toDouble(), 0);
     final windValues = dailyValues<double>(
         'wind_speed_10m_max', (v) => (v as num).toDouble(), 0);
+    final precipitationDaily = dailyValues<double>(
+        'precipitation_sum', (v) => (v as num).toDouble(), 0);
     final sunrises = dailyValues<String?>('sunrise', (v) => v as String?, null);
     final sunsets = dailyValues<String?>('sunset', (v) => v as String?, null);
     final daily = <DayForecast>[];
@@ -175,6 +203,7 @@ class WeatherSnapshot {
         weatherCode: dayCodes[i],
         uvIndex: uvValues[i],
         windSpeed: windValues[i],
+        precipitationMm: precipitationDaily[i],
         sunrise: sunrises[i] == null ? null : DateTime.parse(sunrises[i]!),
         sunset: sunsets[i] == null ? null : DateTime.parse(sunsets[i]!),
       ));
@@ -198,41 +227,50 @@ class WeatherSnapshot {
 }
 
 class WeatherCondition {
-  const WeatherCondition(this.label, this.symbol, this.isStormy, this.isWet);
+  const WeatherCondition(
+      this._weatherCode, this.label, this.symbol, this.isStormy, this.isWet);
 
+  final int _weatherCode;
   final String label;
   final String symbol;
   final bool isStormy;
   final bool isWet;
 
+  String symbolFor({required bool isDay}) {
+    if (!isDay && (_weatherCode == 0 || _weatherCode == 1)) {
+      return _weatherCode == 0 ? '🌙' : '☁️';
+    }
+    return symbol;
+  }
+
   factory WeatherCondition.fromCode(int code) {
     if (code == 0) {
-      return const WeatherCondition('Clear sky', '☀️', false, false);
+      return const WeatherCondition(0, 'Clear sky', '☀️', false, false);
     }
     if (code == 1) {
-      return const WeatherCondition('Mainly clear', '🌤️', false, false);
+      return const WeatherCondition(1, 'Mainly clear', '🌤️', false, false);
     }
     if (code == 2) {
-      return const WeatherCondition('Partly cloudy', '⛅', false, false);
+      return const WeatherCondition(2, 'Partly cloudy', '⛅', false, false);
     }
     if (code == 3) {
-      return const WeatherCondition('Overcast', '☁️', false, false);
+      return const WeatherCondition(3, 'Overcast', '☁️', false, false);
     }
     if ([45, 48].contains(code)) {
-      return const WeatherCondition('Foggy', '🌫️', false, false);
+      return WeatherCondition(code, 'Foggy', '🌫️', false, false);
     }
     if ([51, 53, 55, 56, 57].contains(code)) {
-      return const WeatherCondition('Drizzle', '🌦️', false, true);
+      return WeatherCondition(code, 'Drizzle', '🌦️', false, true);
     }
     if ([61, 63, 65, 66, 67, 80, 81, 82].contains(code)) {
-      return const WeatherCondition('Rain showers', '🌧️', false, true);
+      return WeatherCondition(code, 'Rain showers', '🌧️', false, true);
     }
     if ([71, 73, 75, 77, 85, 86].contains(code)) {
-      return const WeatherCondition('Snowfall', '❄️', false, true);
+      return WeatherCondition(code, 'Snowfall', '❄️', false, true);
     }
     if ([95, 96, 99].contains(code)) {
-      return const WeatherCondition('Thunderstorm', '⛈️', true, true);
+      return WeatherCondition(code, 'Thunderstorm', '⛈️', true, true);
     }
-    return const WeatherCondition('Variable conditions', '🌥️', false, false);
+    return WeatherCondition(code, 'Variable conditions', '🌥️', false, false);
   }
 }

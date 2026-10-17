@@ -1,13 +1,13 @@
 # flexiweather
 
-FlexiWeather is a premium Flutter weather companion for Android and iOS. It pairs a calm, dark Material 3 interface with live forecasts from the free Open-Meteo APIs.
+FlexiWeather is a Flutter weather companion for Android, iOS, and web. It pairs a calm, dark Material 3 interface with forecasts from Open-Meteo.
 
 ## Features
 
 - Current conditions, feels-like temperature, humidity, wind, UV index, visibility, sunrise, and sunset
 - Worldwide city search using Open-Meteo Geocoding
 - Current-location weather with permission-aware location handling
-- 24-hour hourly outlook with precipitation probability and a seven-day forecast
+- 24-hour and seven-day forecasts with switchable temperature, precipitation, and wind views, including distinct subtle rain and wind motion
 - Celsius and Fahrenheit display, with the preference saved locally
 - Favorite cities saved on device
 - Weather-aware animated background gradients
@@ -19,7 +19,7 @@ FlexiWeather is a premium Flutter weather companion for Android and iOS. It pair
 - Open-Meteo Forecast and Geocoding APIs (no API key)
 - `http`, `geolocator`, `shared_preferences`, `provider`, and `intl`
 
-Open-Meteo's free service is intended for non-commercial use. Review its current terms before shipping a commercial product.
+The Open-Meteo free API is for non-commercial use, is rate-limited, and requires attribution under CC BY 4.0. FlexiWeather currently has no ads, subscription, or payment features. Obtain the appropriate Open-Meteo licence before monetizing or using its free API commercially. Review [Open-Meteo's current terms](https://open-meteo.com/en/terms) before release.
 
 ## Requirements
 
@@ -59,7 +59,7 @@ The repository contains the Flutter application source and location permission e
    flutter run -d <device-id>
    ```
 
-The first launch loads San Francisco as a sample city. Search for any city or use the location button to load nearby weather. Location access is only requested when that button is used.
+The first launch loads San Francisco as a sample city. Search for any city or use the location button to load nearby weather. The location action explains the data transfer before requesting device permission.
 
 ## Location permissions
 
@@ -75,6 +75,7 @@ lib/
   state/weather_controller.dart     App state and persisted preferences
   ui/                               Weather screen, theme, and background
   ui/widgets/                       Forecast rows and city search sheet
+  ui/legal_pages.dart               In-app privacy, terms, cookie, and refund pages
 test/
   weather_test.dart                 Parsing, weather codes, and temperature tests
 ```
@@ -92,4 +93,12 @@ flutter test
 
 ## Data and privacy
 
-Weather requests send the selected place's coordinates to Open-Meteo. Location is requested only after the user taps the location control; the app does not store a location history. Temperature units, the selected place, and favorite places are stored locally with SharedPreferences.
+- City names typed into search and the selected place's coordinates are sent directly from the device/browser to Open-Meteo. Requests may expose ordinary network metadata such as an IP address to that provider.
+- Current location is optional. The app explains the request, asks the operating system for permission, and sends the coordinates to Open-Meteo. It does not save a one-time current-location selection; a user can explicitly add it to Favorites.
+- On Android and iOS, the theme choice, temperature unit, forecast display choice, favorite places, and up to eight cities explicitly selected from search are stored locally using SharedPreferences. Typed search text and a one-time device location are not saved as recent searches. Recent searches can be cleared in the city picker.
+- In the web app, those optional preferences are stored in browser local storage only after the user chooses “Allow saving”. “Continue without saving” keeps preferences in memory for that session. The choice is remembered locally. No analytics SDK, advertising pixel, third-party iframe, or analytics/ad cookie is configured in this repository.
+- The app has no account, marketing/contact form, payment flow, or fake review content.
+
+The app includes Privacy Policy, Terms and Conditions, Cookie and Storage Policy, and Refund Policy pages. These are implementation drafts, not legal advice. **They are not ready for public launch until the operator's legal name, country/region, privacy contact email, and any required business address are supplied, the deployment host's logging/cookie behavior is checked, and the legal text is reviewed for the intended markets.** The Refund Policy states that the current app is free and has no purchase to refund; add detailed checkout/cancellation terms before introducing a paid feature.
+
+The web app exposes the policy pages at `/privacy`, `/terms`, `/cookies`, and `/refunds`. Configure the production host to serve the Flutter app shell for these client-side routes so direct links and refreshes work.

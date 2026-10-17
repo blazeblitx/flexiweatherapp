@@ -36,9 +36,10 @@ class OpenMeteoService {
       'longitude': place.longitude.toString(),
       'current':
           'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m,uv_index,visibility',
-      'hourly': 'temperature_2m,precipitation_probability,weather_code',
+      'hourly':
+          'temperature_2m,precipitation,precipitation_probability,weather_code,is_day,wind_speed_10m',
       'daily':
-          'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max',
+          'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,wind_speed_10m_max,precipitation_sum',
       'forecast_days': '7',
       'timezone': 'auto',
       'wind_speed_unit': 'kmh',

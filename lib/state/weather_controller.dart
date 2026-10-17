@@ -4,6 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/weather.dart';
 import '../services/open_meteo_service.dart';
+import '../services/web_storage_consent_stub.dart'
+    if (dart.library.html) '../services/web_storage_consent_web.dart'
+    as web_storage_consent;
 
 class WeatherController extends ChangeNotifier {
   WeatherController({OpenMeteoService? service})
@@ -22,34 +25,117 @@ class WeatherController extends ChangeNotifier {
   WeatherSnapshot? weather;
   List<WeatherPlace> searchResults = const [];
   List<WeatherPlace> favorites = const [];
+  List<WeatherPlace> recentSearches = const [];
   WeatherPlace selectedPlace = _defaultPlace;
   TemperatureUnit unit = TemperatureUnit.celsius;
+  ForecastMetric forecastMetric = ForecastMetric.temperature;
+  bool isDarkMode = true;
   bool isLoading = true;
   bool isSearching = false;
   bool isLocating = false;
+  bool? storageConsent;
   String? errorMessage;
   int _weatherRequestId = 0;
   int _searchRequestId = 0;
 
+  bool get isWeb => kIsWeb;
+  bool get shouldAskStorageConsent => kIsWeb && storageConsent == null;
+  String get storageChoiceLabel => storageConsent == null
+      ? 'Not chosen'
+      : storageConsent!
+          ? 'Saving preferences is allowed'
+          : 'Session only';
+  bool get _canPersist => !kIsWeb || storageConsent == true;
+
   Future<void> initialize() async {
     try {
-      _preferences = await SharedPreferences.getInstance();
-      final savedUnit = _preferences?.getString('temperature_unit');
-      if (savedUnit == TemperatureUnit.fahrenheit.name) {
-        unit = TemperatureUnit.fahrenheit;
+      if (kIsWeb) {
+        storageConsent = switch (web_storage_consent.readWebStorageChoice()) {
+          'allow' => true,
+          'decline' => false,
+          _ => null,
+        };
+      } else {
+        storageConsent = true;
       }
-      final favoriteNames =
-          _preferences?.getStringList('favorite_places') ?? const [];
-      favorites =
-          favoriteNames.map(_decodePlace).whereType<WeatherPlace>().toList();
-      final savedPlace =
-          _decodePlace(_preferences?.getString('selected_place'));
-      selectedPlace = savedPlace ?? _defaultPlace;
+      if (_canPersist) {
+        _preferences = await SharedPreferences.getInstance();
+        await _loadSavedPreferences();
+      }
     } catch (_) {
       // Storage is optional; the app remains usable with session-only settings.
+      _preferences = null;
+      storageConsent = kIsWeb ? storageConsent : true;
       selectedPlace = _defaultPlace;
     }
     await loadWeather(selectedPlace);
+  }
+
+  Future<void> _loadSavedPreferences() async {
+    final savedUnit = _preferences?.getString('temperature_unit');
+    unit = savedUnit == TemperatureUnit.fahrenheit.name
+        ? TemperatureUnit.fahrenheit
+        : TemperatureUnit.celsius;
+    isDarkMode = _preferences?.getBool('is_dark_mode') ?? isDarkMode;
+    forecastMetric = ForecastMetric.values.firstWhere(
+      (metric) => metric.name == _preferences?.getString('forecast_metric'),
+      orElse: () => ForecastMetric.temperature,
+    );
+    final favoriteNames =
+        _preferences?.getStringList('favorite_places') ?? const [];
+    favorites =
+        favoriteNames.map(_decodePlace).whereType<WeatherPlace>().toList();
+    final recentNames =
+        _preferences?.getStringList('recent_places') ?? const [];
+    recentSearches =
+        recentNames.map(_decodePlace).whereType<WeatherPlace>().toList();
+    // Do not restore the last searched or device location. Older builds saved
+    // it automatically; remove that historical value as part of migration.
+    selectedPlace = _defaultPlace;
+    await _preferences?.remove('selected_place');
+  }
+
+  Future<void> setWebStorageConsent({required bool allowed}) async {
+    if (!kIsWeb) return;
+    try {
+      web_storage_consent.writeWebStorageChoice(allowed);
+    } catch (_) {
+      if (allowed) {
+        storageConsent = false;
+        notifyListeners();
+        return;
+      }
+    }
+    storageConsent = allowed;
+    if (allowed) {
+      try {
+        _preferences ??= await SharedPreferences.getInstance();
+        final previousSelection = selectedPlace;
+        await _loadSavedPreferences();
+        notifyListeners();
+        if (selectedPlace != previousSelection) {
+          await loadWeather(selectedPlace);
+        }
+      } catch (_) {
+        _preferences = null;
+        storageConsent = false;
+      }
+    } else {
+      // A decline also clears any app preferences from an earlier version.
+      try {
+        _preferences ??= await SharedPreferences.getInstance();
+        await _clearStoredAppData();
+      } catch (_) {
+        // Browser storage may be unavailable; keep the app usable in memory.
+      }
+      _preferences = null;
+      favorites = const [];
+      recentSearches = const [];
+      unit = TemperatureUnit.celsius;
+      isDarkMode = true;
+      forecastMetric = ForecastMetric.temperature;
+      notifyListeners();
+    }
   }
 
   Future<void> loadWeather(WeatherPlace place) async {
@@ -62,7 +148,6 @@ class WeatherController extends ChangeNotifier {
       final result = await _service.fetchWeather(place);
       if (requestId != _weatherRequestId) return;
       weather = result;
-      await _preferences?.setString('selected_place', _encodePlace(place));
     } catch (error) {
       if (requestId != _weatherRequestId) return;
       errorMessage = error is WeatherServiceException
@@ -151,7 +236,25 @@ class WeatherController extends ChangeNotifier {
 
   Future<void> setUnit(TemperatureUnit next) async {
     unit = next;
-    await _preferences?.setString('temperature_unit', next.name);
+    if (_canPersist) {
+      await _preferences?.setString('temperature_unit', next.name);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setDarkMode(bool enabled) async {
+    isDarkMode = enabled;
+    if (_canPersist) {
+      await _preferences?.setBool('is_dark_mode', enabled);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setForecastMetric(ForecastMetric metric) async {
+    forecastMetric = metric;
+    if (_canPersist) {
+      await _preferences?.setString('forecast_metric', metric.name);
+    }
     notifyListeners();
   }
 
@@ -167,9 +270,59 @@ class WeatherController extends ChangeNotifier {
       updated.add(place);
     }
     favorites = updated;
-    await _preferences?.setStringList(
-        'favorite_places', favorites.map(_encodePlace).toList());
+    if (_canPersist) {
+      await _preferences?.setStringList(
+          'favorite_places', favorites.map(_encodePlace).toList());
+    }
     notifyListeners();
+  }
+
+  Future<void> addRecentSearch(WeatherPlace place) async {
+    recentSearches = [
+      place,
+      ...recentSearches.where((item) => !_samePlace(item, place)),
+    ].take(8).toList();
+    if (_canPersist) {
+      await _preferences?.setStringList(
+          'recent_places', recentSearches.map(_encodePlace).toList());
+    }
+    notifyListeners();
+  }
+
+  Future<void> clearRecentSearches() async {
+    recentSearches = const [];
+    if (_canPersist) await _preferences?.remove('recent_places');
+    notifyListeners();
+  }
+
+  bool _samePlace(WeatherPlace first, WeatherPlace second) =>
+      first.latitude == second.latitude && first.longitude == second.longitude;
+
+  Future<void> clearSavedAppData() async {
+    if (_preferences == null && !kIsWeb) {
+      _preferences = await SharedPreferences.getInstance();
+    }
+    await _clearStoredAppData();
+    favorites = const [];
+    recentSearches = const [];
+    unit = TemperatureUnit.celsius;
+    isDarkMode = true;
+    forecastMetric = ForecastMetric.temperature;
+    if (selectedPlace.name != 'Current location') {
+      selectedPlace = _defaultPlace;
+      await loadWeather(_defaultPlace);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> _clearStoredAppData() async {
+    await _preferences?.remove('temperature_unit');
+    await _preferences?.remove('is_dark_mode');
+    await _preferences?.remove('forecast_metric');
+    await _preferences?.remove('selected_place');
+    await _preferences?.remove('favorite_places');
+    await _preferences?.remove('recent_places');
   }
 
   String _encodePlace(WeatherPlace place) =>

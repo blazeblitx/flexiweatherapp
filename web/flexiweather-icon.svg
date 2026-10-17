@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24505A"/>
+      <stop offset="1" stop-color="#101B27"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="116" y1="237" x2="395" y2="371" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C7FFF2"/>
+      <stop offset="1" stop-color="#75CFC6"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="488" height="488" rx="142" fill="url(#sky)"/>
+  <circle cx="342" cy="170" r="65" fill="#F2C58F"/>
+  <g stroke="#F2C58F" stroke-linecap="round" stroke-width="16">
+    <path d="M342 65v-24M342 299v-24M237 170h-24M471 170h-24M268 96l-17-17M433 261l-17-17M416 96l17-17M251 261l17-17"/>
+  </g>
+  <path d="M376 360H151c-40 0-72-30-72-68 0-35 27-64 62-68 13-48 57-82 108-82 57 0 104 43 112 99 35 6 61 34 61 67 0 29-20 52-46 52Z" fill="url(#cloud)"/>
+  <path d="M152 341h218" stroke="#E9FFF8" stroke-linecap="round" stroke-opacity=".35" stroke-width="12"/>
+</svg>
